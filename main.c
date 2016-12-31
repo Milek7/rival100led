@@ -4,22 +4,23 @@
 #include <inttypes.h>
 #include <math.h>
 #include <signal.h>
-#include <sys/sysinfo.h>
 #include <hidapi/hidapi.h>
 
 float get_mem_usage()
 {
-	struct sysinfo info;
-	sysinfo(&info);
-	return (float)(info.totalram - info.freeram - info.bufferram) /
-	       (float)info.totalram;
+	FILE *fp = fopen("/proc/meminfo", "r");
+	long int total, free, avail;
+	fscanf(fp, "%*s %ld %*s %*s %ld %*s %*s %ld %*s",
+	       &total, &free, &avail);
+	fclose(fp);
+	return (float)(total - avail) / (float)(total);
 }
 
 long int prev_idle = 0, prev_busy = 0;
 
 float get_cpu_usage()
 {
-	FILE *fp = fopen("/proc/stat","r");
+	FILE *fp = fopen("/proc/stat", "r");
 	long int user, nice, system, idle, iowait,
 	         irq, softirq, steal, guest, guest_nice;
 	fscanf(fp, "%*s %ld %ld %ld %ld %ld %ld %ld %ld %ld %ld",
@@ -75,20 +76,23 @@ struct rgb_f hl_to_rgb(float hue, float l)
 	float h = hue / 60.0;
 	float x = c * (1.0 - fabs(fmod(h, 2) - 1));
 
-	if (h >= 0.0 && h <= 1.0)
-		return (struct rgb_f) {c, x, 0.0f};
-	if (h >= 1.0 && h <= 2.0)
-		return (struct rgb_f) {x, c, 0.0f};
-	if (h >= 2.0 && h <= 3.0)
-		return (struct rgb_f) {0.0f, c, x};
-	if (h >= 3.0 && h <= 4.0)
-		return (struct rgb_f) {0.0f, x, c};
-	if (h >= 4.0 && h <= 5.0)
-		return (struct rgb_f) {x, 0.0f, c};
-	if (h >= 5.0 && h <= 6.0)
-		return (struct rgb_f) {c, 0.0f, x};
+	struct rgb_f t;
 
-	return (struct rgb_f) {0.0f, 0.0f, 0.0f};
+	if (h >= 0.0 && h <= 1.0)
+		t = (struct rgb_f) {c, x, 0.0f};
+	if (h >= 1.0 && h <= 2.0)
+		t = (struct rgb_f) {x, c, 0.0f};
+	if (h >= 2.0 && h <= 3.0)
+		t = (struct rgb_f) {0.0f, c, x};
+	if (h >= 3.0 && h <= 4.0)
+		t = (struct rgb_f) {0.0f, x, c};
+	if (h >= 4.0 && h <= 5.0)
+		t = (struct rgb_f) {x, 0.0f, c};
+	if (h >= 5.0 && h <= 6.0)
+		t = (struct rgb_f) {c, 0.0f, x};
+
+	float m = l - 0.5 * c;
+	return (struct rgb_f) {t.r + m, t.g + m, t.b + m};
 }
 
 sig_atomic_t stop_flag;
@@ -115,7 +119,7 @@ int main()
 		}
 
 		float hue = 120.0f + get_mem_usage() * 240.0f;
-		float luma = 0.1f + fmin(1.0, 2.0 * get_cpu_usage()) * 0.5;
+		float luma = 0.1f + get_cpu_usage() * 0.5;
 		struct rgb_f f = hl_to_rgb(hue, luma);
 
 		packet[3] = (uint8_t)(f.r * 255.0f);
